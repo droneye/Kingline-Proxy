@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import os
+import json
 import logging
 import socketserver
 import threading
 from typing import Optional
 
-from dnslib import DNSRecord, QTYPE, RR, A
+from dnslib import DNSRecord, QTYPE, RR, A, TXT, CAA
 
 # ---------- Загрузка отдельного .env из папки dns ----------
 
@@ -25,7 +26,7 @@ if load_dotenv is not None and os.path.exists(DNS_ENV_PATH):
 try:
     from .dns_balancer import DNSBalancer  # если файл в том же пакете dns/
 except ImportError:  # pragma: no cover
-    from dns_balancer import DNSBalancer   # fallback, если запускаешь как скрипт
+    from dns_balancer import DNSBalancer  # fallback, если запускаешь как скрипт
 
 # Локатор пользователя по sub_id
 try:
@@ -59,6 +60,19 @@ TTL = int(os.getenv("KINGLINE_DNS_TTL", "30"))
 # Апстрим-DNS для всех «чужих» доменов
 UPSTREAM_DNS = os.getenv("DNS_UPSTREAM", "1.1.1.1").strip()
 UPSTREAM_PORT = int(os.getenv("DNS_UPSTREAM_PORT", "53"))
+
+# ---------- ACME DNS-01 (TXT для _acme-challenge.*) ----------
+# JSON-хранилище вида:
+# {
+#   "_acme-challenge.sub.kingline.online.": ["token1", "token2"]
+# }
+ACME_STORE_PATH = os.getenv("ACME_CHALLENGE_STORE", "/var/lib/kingline/acme_challenges.json").strip()
+ACME_TTL = int(os.getenv("ACME_CHALLENGE_TTL", "60"))
+# По желанию можно ограничить только зоной sub:
+ACME_ZONE_SUFFIX = os.getenv("ACME_ZONE_SUFFIX", "sub.kingline.online").strip().strip(".").lower()
+
+# CA, которому разрешаем выпуск (по умолчанию LE)
+ACME_CAA_ISSUER = os.getenv("ACME_CAA_ISSUER", "letsencrypt.org").strip()
 
 LOG_LEVEL = os.getenv("DNS_LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
@@ -94,14 +108,156 @@ else:
         "Панельный домен / IP не заданы (KINGLINE_DNS_PANEL_DOMAIN / KINGLINE_DNS_PANEL_IP)."
     )
 
+logger.info(
+    "ACME store: %s (TTL=%s), zone suffix for ACME: %s, CAA issuer: %s",
+    ACME_STORE_PATH,
+    ACME_TTL,
+    ACME_ZONE_SUFFIX,
+    ACME_CAA_ISSUER,
+)
+
 # Инициализируем локатор пользователей
 DB_PATH = os.getenv("DB_PATH", "vpn_bot.db")
 USER_LOCATOR = DNSUserLocator(
-    db_path=DB_PATH, 
+    db_path=DB_PATH,
     domains=DOMAINS,
-    traffic_data_file=os.getenv("TRAFFIC_DATA_FILE")  # Передаем путь к файлу трафика
+    traffic_data_file=os.getenv("TRAFFIC_DATA_FILE"),  # Передаем путь к файлу трафика
 )
 logger.info("DNSUserLocator инициализирован (DB_PATH=%s)", DB_PATH)
+
+# --- ACME cache ---
+_acme_cache_mtime: float = 0.0
+_acme_cache: dict[str, list[str]] = {}
+
+
+def _norm_fqdn(name: str) -> str:
+    n = name.strip().lower()
+    if not n.endswith("."):
+        n += "."
+    return n
+
+
+def _load_acme_store() -> dict[str, list[str]]:
+    """
+    Читает JSON со значениями TXT.
+    Формат:
+      { "_acme-challenge.sub.kingline.online.": ["token1", "token2"] }
+    """
+    global _acme_cache_mtime, _acme_cache
+    try:
+        st = os.stat(ACME_STORE_PATH)
+        if _acme_cache and st.st_mtime == _acme_cache_mtime:
+            return _acme_cache
+
+        with open(ACME_STORE_PATH, "r", encoding="utf-8") as f:
+            raw = json.load(f) or {}
+
+        data: dict[str, list[str]] = {}
+        for k, v in raw.items():
+            fqdn = _norm_fqdn(str(k))
+            if isinstance(v, list):
+                vals = [str(x) for x in v if str(x)]
+            elif isinstance(v, str):
+                vals = [v]
+            else:
+                vals = []
+            if vals:
+                data[fqdn] = vals
+
+        _acme_cache = data
+        _acme_cache_mtime = st.st_mtime
+        return data
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        logger.warning("ACME store read error (%s): %s", ACME_STORE_PATH, e)
+        return {}
+
+
+def _maybe_answer_acme_txt(request: DNSRecord, qname: str, client_ip: str) -> Optional[bytes]:
+    """
+    Если запрос TXT к _acme-challenge.* — отвечаем из ACME_STORE_PATH.
+    """
+    fqdn = _norm_fqdn(qname)
+
+    # Обрабатываем только _acme-challenge.*
+    if not fqdn.startswith("_acme-challenge."):
+        return None
+
+    # (опционально) ограничим зоной, чтобы случайно не отвечать на чужие домены
+    if ACME_ZONE_SUFFIX and not fqdn.endswith(f".{ACME_ZONE_SUFFIX}."):
+        return None
+
+    store = _load_acme_store()
+    values = store.get(fqdn)
+
+    reply = request.reply()
+    reply.header.aa = 1
+    reply.header.ra = 0
+
+    if not values:
+        reply.header.rcode = 3  # NXDOMAIN
+        logger.info("ACME TXT NXDOMAIN для %s (client=%s)", qname, client_ip)
+        return reply.pack()
+
+    for v in values:
+        reply.add_answer(
+            RR(
+                rname=qname,
+                rtype=QTYPE.TXT,
+                rclass=1,
+                ttl=ACME_TTL,
+                rdata=TXT(v),
+            )
+        )
+
+    logger.info("ACME TXT ответ для %s (client=%s): %d value(s)", qname, client_ip, len(values))
+    return reply.pack()
+
+
+def _maybe_answer_caa(request: DNSRecord, qname: str, client_ip: str) -> Optional[bytes]:
+    """
+    Авторитетный ответ на CAA для зоны ACME_ZONE_SUFFIX (по умолчанию sub.kingline.online).
+    Нужен, чтобы Let's Encrypt не ловил SERVFAIL на CAA lookup.
+    """
+    if not ACME_ZONE_SUFFIX:
+        return None
+
+    fqdn = _norm_fqdn(qname)
+    zone = _norm_fqdn(ACME_ZONE_SUFFIX)  # "sub.kingline.online."
+
+    # отвечаем только внутри нашей делегированной зоны
+    if not (fqdn == zone or fqdn.endswith("." + zone)):
+        return None
+
+    reply = request.reply()
+    reply.header.aa = 1
+    reply.header.ra = 0
+    # NOERROR, просто даём политику выпуска
+
+    issuer = ACME_CAA_ISSUER or "letsencrypt.org"
+
+    reply.add_answer(
+        RR(
+            rname=qname,
+            rtype=QTYPE.CAA,
+            rclass=1,
+            ttl=300,
+            rdata=CAA(0, "issue", issuer),
+        )
+    )
+    reply.add_answer(
+        RR(
+            rname=qname,
+            rtype=QTYPE.CAA,
+            rclass=1,
+            ttl=300,
+            rdata=CAA(0, "issuewild", issuer),
+        )
+    )
+
+    logger.info("CAA ответ для %s (client=%s): issuer=%s", qname, client_ip, issuer)
+    return reply.pack()
 
 
 def _match_domain(qname: str) -> bool:
@@ -166,6 +322,26 @@ class DNSHandler(socketserver.BaseRequestHandler):
         qtype = QTYPE.get(q.qtype, "UNKNOWN")
 
         logger.info("📥 Запрос от %s:%s — %s %s", client_ip, client_port, qname, qtype)
+
+        # --- ACME DNS-01: TXT ответы для _acme-challenge.* ---
+        if qtype == "TXT":
+            resp = _maybe_answer_acme_txt(request, qname, client_ip)
+            if resp is not None:
+                try:
+                    sock.sendto(resp, self.client_address)
+                except Exception as e:
+                    logger.warning("Ошибка отправки ACME TXT клиенту %s: %s", client_ip, e)
+                return
+
+        # --- CAA: обязателен для Let's Encrypt (иначе может быть SERVFAIL) ---
+        if qtype == "CAA":
+            resp = _maybe_answer_caa(request, qname, client_ip)
+            if resp is not None:
+                try:
+                    sock.sendto(resp, self.client_address)
+                except Exception as e:
+                    logger.warning("Ошибка отправки CAA клиенту %s: %s", client_ip, e)
+                return
 
         # --- Наши домены: включаем магию с sub_id и локациями ---
         if qtype == "A" and _match_domain(qname):
@@ -279,7 +455,7 @@ class DNSHandler(socketserver.BaseRequestHandler):
                     reply.header.rcode = 3  # NXDOMAIN
 
             except Exception as e:
-                # Любая ошибка в нашей логике → логируем и шлём NXDOMAIN, чтобы не вешать клиента
+                # Любая ошибка в нашей логике → логируем и шлём NXDOMAIN
                 logger.exception("Исключение при обработке нашего домена %s: %s", qname, e)
                 reply = request.reply()
                 reply.header.aa = 1

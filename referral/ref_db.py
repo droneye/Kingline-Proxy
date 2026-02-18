@@ -15,7 +15,10 @@ class ReferralDB:
       - ref_code      : реферальный код пригласившего (уникальный)
       - invited_json  : JSON-массив объектов:
                         [{"tg_id": 123, "rewarded": 0}, ...]
-                        rewarded=1 означает, что за этого друга бонус уже выдан.
+                        rewarded:
+                          0 = бонус не выдавался (eligible)
+                          2 = бонус зарезервирован (pending) — защита от гонок/повторов
+                          1 = бонус выдан (done)
     """
 
     def __init__(self, path: str = "ref.db"):
@@ -98,29 +101,115 @@ class ReferralDB:
             row = cur.fetchone()
         return self._row_to_dict(row) if row else None
 
-    def get_invitation_for_invited(
-        self, invited_tg_id: int
-    ) -> Optional[Tuple[int, bool]]:
+    def get_invitation_for_invited(self, invited_tg_id: int) -> Optional[Tuple[int, bool]]:
         """
-        Найти, есть ли уже запись о том, что invited_tg_id
-        использовал чей-то реферальный код.
+        Найти, есть ли запись о том, что invited_tg_id использовал чей-то код.
 
         Возвращает (inviter_tg_id, rewarded_already) или None.
+        rewarded_already=True если статус rewarded != 0 (то есть 1 или 2).
         """
         with self._connect() as conn, closing(conn.cursor()) as cur:
-            cur.execute(
-                "SELECT inviter_tg_id, invited_json FROM referrals"
-            )
+            cur.execute("SELECT inviter_tg_id, invited_json FROM referrals")
             rows = cur.fetchall()
 
         for inviter_tg_id, invited_json in rows:
             items = self._parse_invited(invited_json or "[]")
             for it in items:
                 if int(it.get("tg_id") or 0) == int(invited_tg_id):
-                    rewarded = bool(it.get("rewarded"))
-                    return int(inviter_tg_id), rewarded
+                    status = int(it.get("rewarded") or 0)
+                    rewarded_already = (status != 0)  # 1=done, 2=pending
+                    return int(inviter_tg_id), rewarded_already
 
         return None
+
+    # ===== Anti-abuse helpers =====
+
+    def has_invited(self, inviter_tg_id: int, invited_tg_id: int) -> bool:
+        """
+        True если inviter_tg_id уже добавлял invited_tg_id в свой invited_json.
+        Используется для запрета взаимных рефералов A<->B.
+        """
+        row = self.get_by_inviter(inviter_tg_id)
+        if not row:
+            return False
+        items = self._parse_invited(row.get("invited_json") or "[]")
+        for it in items:
+            if int(it.get("tg_id") or 0) == int(invited_tg_id):
+                return True
+        return False
+
+    def try_reserve_reward(self, inviter_tg_id: int, invited_tg_id: int) -> bool:
+        """
+        Атомарно (в рамках одной строки) резервирует бонус для пары inviter->invited:
+        rewarded: 0 -> 2 (pending)
+
+        Возвращает True если удалось зарезервировать, иначе False.
+        """
+        row = self.get_by_inviter(inviter_tg_id)
+        if not row:
+            return False
+
+        invited_items = self._parse_invited(row.get("invited_json") or "[]")
+        changed = False
+
+        for it in invited_items:
+            if int(it.get("tg_id") or 0) == int(invited_tg_id):
+                status = int(it.get("rewarded") or 0)
+                if status == 0:
+                    it["rewarded"] = 2  # pending
+                    changed = True
+                else:
+                    # already pending or done
+                    return False
+
+        if not changed:
+            return False
+
+        invited_json = self._dump_invited(invited_items)
+        with self._connect() as conn, closing(conn.cursor()) as cur:
+            cur.execute(
+                """
+                UPDATE referrals
+                SET invited_json = ?
+                WHERE inviter_tg_id = ?
+                """,
+                (invited_json, inviter_tg_id),
+            )
+            conn.commit()
+        return True
+
+    def unreserve_reward(self, inviter_tg_id: int, invited_tg_id: int) -> None:
+        """
+        Откат резерва (pending=2 -> 0), если продление не удалось.
+        """
+        row = self.get_by_inviter(inviter_tg_id)
+        if not row:
+            return
+
+        invited_items = self._parse_invited(row.get("invited_json") or "[]")
+        changed = False
+
+        for it in invited_items:
+            if int(it.get("tg_id") or 0) == int(invited_tg_id):
+                status = int(it.get("rewarded") or 0)
+                if status == 2:
+                    it["rewarded"] = 0
+                    changed = True
+
+        if not changed:
+            return
+
+        invited_json = self._dump_invited(invited_items)
+        with self._connect() as conn, closing(conn.cursor()) as cur:
+            cur.execute(
+                """
+                UPDATE referrals
+                SET invited_json = ?
+                WHERE inviter_tg_id = ?
+                """,
+                (invited_json, inviter_tg_id),
+            )
+            conn.commit()
 
     # ===== public API =====
 
@@ -133,7 +222,6 @@ class ReferralDB:
         if row and row.get("ref_code"):
             return str(row["ref_code"])
 
-        # создаём новый код
         code = self._generate_unique_code()
 
         with self._connect() as conn, closing(conn.cursor()) as cur:
@@ -157,7 +245,6 @@ class ReferralDB:
         """
         row = self.get_by_inviter(inviter_tg_id)
         if not row:
-            # если почему-то нет строки — создаём код по умолчанию
             ref_code = self._generate_unique_code()
             invited_items: List[Dict[str, Any]] = []
         else:
@@ -166,11 +253,9 @@ class ReferralDB:
 
         for it in invited_items:
             if int(it.get("tg_id") or 0) == int(invited_tg_id):
-                # уже есть, ничего не меняем
                 return
 
         invited_items.append({"tg_id": int(invited_tg_id), "rewarded": 0})
-
         invited_json = self._dump_invited(invited_items)
 
         with self._connect() as conn, closing(conn.cursor()) as cur:
@@ -188,18 +273,20 @@ class ReferralDB:
 
     def mark_rewarded(self, inviter_tg_id: int, invited_tg_id: int) -> None:
         """
-        Помечает, что за invited_tg_id бонус уже выдан.
+        Помечает, что за invited_tg_id бонус выдан: rewarded=1.
+        (Если было pending=2 — переводим в 1. Если было 0 — тоже ставим 1.)
         """
         row = self.get_by_inviter(inviter_tg_id)
         if not row:
             return
 
         invited_items = self._parse_invited(row.get("invited_json") or "[]")
-
         changed = False
+
         for it in invited_items:
             if int(it.get("tg_id") or 0) == int(invited_tg_id):
-                if not it.get("rewarded"):
+                status = int(it.get("rewarded") or 0)
+                if status != 1:
                     it["rewarded"] = 1
                     changed = True
 
@@ -207,7 +294,6 @@ class ReferralDB:
             return
 
         invited_json = self._dump_invited(invited_items)
-
         with self._connect() as conn, closing(conn.cursor()) as cur:
             cur.execute(
                 """

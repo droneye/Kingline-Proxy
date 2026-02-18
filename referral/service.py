@@ -54,6 +54,16 @@ class ReferralService:
         if inviter_tg_id == invited_tg_id:
             return False, "😅 Нельзя использовать собственный реферальный код."
 
+        # 🔒 Анти-абуз: запрет взаимных рефералов A<->B
+        # Нельзя использовать код пользователя, которого ты уже приглашал.
+        if self.storage.has_invited(invited_tg_id, inviter_tg_id):
+            return (
+                False,
+                "⚠️ Нельзя использовать реферальный код пользователя, которого ты уже приглашал.\n"
+                "Это защита от взаимного обмена кодами.",
+            )
+
+        # Уже использовал какой-то код ранее (или бонус уже pending/выдан)
         invitation = self.storage.get_invitation_for_invited(invited_tg_id)
         if invitation is not None:
             return False, "⚠️ Ты уже использовал реферальный код ранее."
@@ -75,7 +85,10 @@ class ReferralService:
     ) -> None:
         """
         Вызывается когда invited_tg_id оформил полный тариф.
-        Добавляем задержку 30 секунд перед продлением подписки пригласившему.
+
+        Фиксы анти-абуза:
+        - бонус строго 1 раз на пару inviter->invited
+        - защита от повторных вызовов/гонок за счёт "резерва" (rewarded=2) ДО sleep
         """
         info = self.storage.get_invitation_for_invited(invited_tg_id)
         if not info:
@@ -85,13 +98,17 @@ class ReferralService:
         if rewarded_already:
             return
 
-        # Создаем отложенную задачу с задержкой 30 секунд
+        # 🔒 Резервируем бонус сразу (rewarded: 0 -> 2), чтобы:
+        # - повторные renewals invited не увеличивали срок inviter снова
+        # - повторные вызовы handle_premium_activated не создали вторую задачу
+        reserved = self.storage.try_reserve_reward(inviter_tg_id, invited_tg_id)
+        if not reserved:
+            return
+
         async def delayed_reward():
             try:
-                # Ждем 30 секунд
                 await asyncio.sleep(30)
-                
-                # Продлеваем подписку пригласившему
+
                 await self._extend_inviter_subscription(inviter_tg_id, context)
 
                 # Помечаем, что бонус выдан
@@ -103,9 +120,11 @@ class ReferralService:
                 )
 
             except Exception:
+                # Если не удалось продлить — откатываем reserve,
+                # чтобы можно было корректно повторить потом
+                self.storage.unreserve_reward(inviter_tg_id, invited_tg_id)
                 logger.exception("Ошибка при продлении подписки по рефералке")
 
-        # Запускаем отложенную задачу
         asyncio.create_task(delayed_reward())
 
     async def _send_reward_notifications(
@@ -115,7 +134,6 @@ class ReferralService:
         invited_chat_id: Optional[int],
         context: ContextTypes.DEFAULT_TYPE,
     ) -> None:
-        """Отправка уведомлений о бонусе с задержкой"""
         try:
             await context.bot.send_message(
                 chat_id=inviter_tg_id,
@@ -154,47 +172,38 @@ class ReferralService:
         Использует ту же логику, что и основная система тарифов.
         """
         existing = db.get_user(inviter_tg_id) or {}
-        
+
         tg_name = existing.get("tg_name") or ""
         username_clean = (existing.get("username") or f"user{inviter_tg_id}").replace(" ", "")
 
-        # Убеждаемся, что пользователь есть в базе
         BillingDB.ensure_user_row(inviter_tg_id, tg_name, username_clean)
-        existing = db.get_user(inviter_tg_id) or {}  # Обновляем данные
+        existing = db.get_user(inviter_tg_id) or {}
 
         sub_id = existing.get("sub_id")
         if not sub_id:
-            # Создаем новый sub_id, если его нет
             sub_id = BillingDB.generate_sub_id(inviter_tg_id, tg_name, username_clean)
 
         prev_free_used = int(existing.get("free_used") or 0)
-        had_link_before = bool(existing.get("sub_id"))
 
-        # Определяем базовую дату для продления (максимум из текущей даты и даты окончания текущей подписки)
         base_exp = datetime.now(timezone.utc)
         try:
             ke = existing.get("key_expires_at")
             if ke:
-                db_exp = datetime.strptime(ke, "%Y-%m-%dT%H:%M:%SZ").replace(
-                    tzinfo=timezone.utc
-                )
+                db_exp = datetime.strptime(ke, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
                 if db_exp > base_exp:
                     base_exp = db_exp
         except Exception:
             pass
 
         try:
-            # Удаляем старых клиентов пользователя
             await BillingDB.delete_all_user_clients(
                 sub_id=sub_id,
                 username_clean=username_clean,
             )
 
-            # Новый срок: +30 дней от базовой даты
             expire_dt = base_exp + timedelta(days=30)
             expiry_time_ms = int(expire_dt.timestamp() * 1000)
 
-            # Создаем новых клиентов
             client_ids, expiry_ts = await BillingDB.create_clients_for_user(
                 sub_id=sub_id,
                 username_clean=username_clean,
@@ -203,7 +212,6 @@ class ReferralService:
 
             key_created_at = now_iso()
 
-            # Определяем дату окончания
             if expiry_ts:
                 dt = datetime.fromtimestamp(
                     (expiry_ts / 1000) if expiry_ts > 10_000_000_000 else expiry_ts,
@@ -213,7 +221,6 @@ class ReferralService:
             else:
                 key_expires_at = expire_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-            # Обновляем запись в основной БД
             db.upsert_after_create(
                 tg_id=inviter_tg_id,
                 tg_name=tg_name,
@@ -223,22 +230,20 @@ class ReferralService:
                 key_created_at=key_created_at,
                 key_expires_at=key_expires_at,
                 client_ids=client_ids,
-                tariff="premium",  # Пригласивший получает полный тариф
+                tariff="premium",
                 free_used=prev_free_used,
             )
 
-            # Обновляем таймстампы подписки
             BillingDB.update_subscription_timestamps(
                 tg_id=inviter_tg_id,
                 started_iso=key_created_at,
                 expires_iso=key_expires_at,
             )
 
-            # Перезапуск Xray в фоне
             asyncio.create_task(BillingDB.restart_xray_safe())
 
-            logger.info(f"Успешно продлена подписка по рефералке для пользователя {inviter_tg_id}")
+            logger.info("Успешно продлена подписка по рефералке для пользователя %s", inviter_tg_id)
 
-        except Exception as e:
-            logger.exception(f"Ошибка при продлении подписки по рефералке для {inviter_tg_id}")
+        except Exception:
+            logger.exception("Ошибка при продлении подписки по рефералке для %s", inviter_tg_id)
             raise

@@ -20100,3 +20100,1591 @@ if __name__ == "__main__":
     except Exception as e:
         logger.exception("Неожиданная ошибка: %s", e)
         sys.exit(1)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#include <iostream>
+#include <string>
+#include <queue>
+#include <algorithm>
+#include <cstdint>
+
+using namespace std;
+
+struct Node {
+    Node *l = nullptr, *r = nullptr;
+    uint32_t pr;
+    char c;
+    long long cnt;
+    long long sz;
+    int lazy = 0;
+
+    Node(char ch, long long k, uint32_t prio) : pr(prio), c(ch), cnt(k), sz(k) {}
+};
+
+static uint64_t seed64 = 0x9e3779b97f4a7c15ULL;
+static inline uint32_t rnd() {
+    uint64_t z = (seed64 += 0x9e3779b97f4a7c15ULL);
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+    z = z ^ (z >> 31);
+    return (uint32_t)z;
+}
+
+static inline long long getSz(Node* t) { return t ? t->sz : 0LL; }
+
+static inline void pull(Node* t) {
+    if (!t) return;
+    t->sz = getSz(t->l) + t->cnt + getSz(t->r);
+}
+
+static inline void applyPow2(Node* t, int p) {
+    if (!t || p == 0) return;
+    __int128 mul = (__int128)1 << p;
+    t->cnt = (long long)((__int128)t->cnt * mul);
+    t->sz  = (long long)((__int128)t->sz  * mul);
+    t->lazy += p;
+}
+
+static inline void push(Node* t) {
+    if (!t || t->lazy == 0) return;
+    applyPow2(t->l, t->lazy);
+    applyPow2(t->r, t->lazy);
+    t->lazy = 0;
+}
+
+static void split(Node* t, long long k, Node*& a, Node*& b) {
+    if (!t) { a = b = nullptr; return; }
+    push(t);
+    long long lsz = getSz(t->l);
+
+    if (k < lsz) {
+        split(t->l, k, a, t->l);
+        b = t;
+        pull(b);
+    } else if (k > lsz + t->cnt) {
+        split(t->r, k - lsz - t->cnt, t->r, b);
+        a = t;
+        pull(a);
+    } else {
+        long long inside = k - lsz;
+        if (inside == 0) {
+            a = t->l;
+            t->l = nullptr;
+            b = t;
+            pull(b);
+        } else if (inside == t->cnt) {
+            b = t->r;
+            t->r = nullptr;
+            a = t;
+            pull(a);
+        } else {
+            Node* rightNode = new Node(t->c, t->cnt - inside, t->pr);
+            rightNode->r = t->r;
+            rightNode->l = nullptr;
+
+            t->r = nullptr;
+            t->cnt = inside;
+
+            pull(t);
+            pull(rightNode);
+
+            a = t;
+            b = rightNode;
+        }
+    }
+}
+
+static Node* merge(Node* a, Node* b) {
+    if (!a) return b;
+    if (!b) return a;
+    push(a);
+    push(b);
+    if (a->pr > b->pr) {
+        a->r = merge(a->r, b);
+        pull(a);
+        return a;
+    } else {
+        b->l = merge(a, b->l);
+        pull(b);
+        return b;
+    }
+}
+
+static char kth(Node* t, long long k) {
+    push(t);
+    long long lsz = getSz(t->l);
+    if (k <= lsz) return kth(t->l, k);
+    if (k <= lsz + t->cnt) return t->c;
+    return kth(t->r, k - lsz - t->cnt);
+}
+
+int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
+
+    int n, q;
+    cin >> n >> q;
+    string s;
+    cin >> s;
+
+    Node* root = nullptr;
+    for (int i = 0; i < n; ) {
+        int j = i;
+        while (j < n && s[j] == s[i]) j++;
+        root = merge(root, new Node(s[i], j - i, rnd()));
+        i = j;
+    }
+
+    while (q--) {
+        int type;
+        cin >> type;
+        if (type == 1) {
+            long long l, r;
+            cin >> l >> r;
+
+            Node *A, *B, *C;
+            split(root, r, A, C);
+            split(A, l - 1, A, B);
+            applyPow2(B, 1);
+            root = merge(merge(A, B), C);
+        } else {
+            long long i;
+            cin >> i;
+            cout << kth(root, i) << "\n";
+        }
+    }
+
+    return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+from __future__ import annotations
+
+import os
+import logging
+import socketserver
+import threading
+from typing import Optional
+
+from dnslib import DNSRecord, QTYPE, RR, A
+
+# ---------- Загрузка отдельного .env из папки dns ----------
+
+try:
+    from dotenv import load_dotenv  # тот же пакет, что у тебя в config.py
+except ImportError:
+    load_dotenv = None
+
+BASE_DIR = os.path.dirname(__file__)
+DNS_ENV_PATH = os.path.join(BASE_DIR, ".env")
+
+if load_dotenv is not None and os.path.exists(DNS_ENV_PATH):
+    load_dotenv(DNS_ENV_PATH)
+
+# Балансер локаций
+try:
+    from .dns_balancer import DNSBalancer  # если файл в том же пакете dns/
+except ImportError:  # pragma: no cover
+    from dns_balancer import DNSBalancer   # fallback, если запускаешь как скрипт
+
+# Локатор пользователя по sub_id
+try:
+    from .user_locator import DNSUserLocator
+except ImportError:  # pragma: no cover
+    from user_locator import DNSUserLocator
+
+BALANCER = DNSBalancer()
+
+# ---------- Конфиг из окружения (dns/.env и общий .env) ----------
+
+RAW_IPS = os.getenv("KINGLINE_DNS_IPS", "")
+IPS = [
+    part.strip()
+    for part in RAW_IPS.replace(";", ",").split(",")
+    if part.strip()
+]
+
+RAW_DOMAINS = os.getenv("KINGLINE_DNS_DOMAINS", "")
+DOMAINS = [
+    d.strip().strip(".").lower()
+    for d in RAW_DOMAINS.replace(";", ",").split(",")
+    if d.strip()
+]
+
+PANEL_DOMAIN = os.getenv("KINGLINE_DNS_PANEL_DOMAIN", "").strip().strip(".").lower()
+PANEL_IP = os.getenv("KINGLINE_DNS_PANEL_IP", "").strip()
+
+TTL = int(os.getenv("KINGLINE_DNS_TTL", "30"))
+
+# Апстрим-DNS для всех «чужих» доменов
+UPSTREAM_DNS = os.getenv("DNS_UPSTREAM", "1.1.1.1").strip()
+UPSTREAM_PORT = int(os.getenv("DNS_UPSTREAM_PORT", "53"))
+
+LOG_LEVEL = os.getenv("DNS_LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s | %(levelname)s | dns_server | %(message)s",
+)
+logger = logging.getLogger("dns_server")
+
+if not IPS:
+    # если список IP не задан, берём из BALANCER.pool (на всякий случай)
+    IPS = BALANCER.pool
+
+if not IPS:
+    logger.warning(
+        "KINGLINE_DNS_IPS не задана или пуста — сервер будет отвечать NXDOMAIN для наших доменов."
+    )
+else:
+    logger.info("Загружено %d IP для балансировки: %s", len(IPS), ", ".join(IPS))
+
+if DOMAINS:
+    logger.info("Ограничиваемся доменами: %s", ", ".join(DOMAINS))
+else:
+    logger.info("KINGLINE_DNS_DOMAINS не заданы — наши правила применяются ко ВСЕМ A-запросам.")
+
+if PANEL_DOMAIN and PANEL_IP:
+    logger.info(
+        "Панель %s всегда будет резолвиться в %s (без балансировки)",
+        PANEL_DOMAIN,
+        PANEL_IP,
+    )
+else:
+    logger.info(
+        "Панельный домен / IP не заданы (KINGLINE_DNS_PANEL_DOMAIN / KINGLINE_DNS_PANEL_IP)."
+    )
+
+# Инициализируем локатор пользователей
+DB_PATH = os.getenv("DB_PATH", "vpn_bot.db")
+USER_LOCATOR = DNSUserLocator(
+    db_path=DB_PATH, 
+    domains=DOMAINS,
+    traffic_data_file=os.getenv("TRAFFIC_DATA_FILE")  # Передаем путь к файлу трафика
+)
+logger.info("DNSUserLocator инициализирован (DB_PATH=%s)", DB_PATH)
+
+
+def _match_domain(qname: str) -> bool:
+    """
+    Проверяем, подпадает ли имя под список доменов.
+    Если DOMAINS пуст — считаем, что матчим всё.
+    """
+    if not DOMAINS:
+        return True
+    name = qname.rstrip(".").lower()
+    for d in DOMAINS:
+        if name == d or name.endswith("." + d):
+            return True
+    return False
+
+
+def _is_panel_domain(qname: str) -> bool:
+    """
+    Проверяем, относится ли имя к домену панели.
+
+    ВАЖНО: панель — это только СТРОГОЕ совпадение с PANEL_DOMAIN.
+    Поддомены (типа <sub_id>.sub.kingline.online) не считаем панелью,
+    чтобы они шли через USER_LOCATOR/балансер.
+    """
+    if not PANEL_DOMAIN:
+        return False
+    name = qname.rstrip(".").lower()
+    return name == PANEL_DOMAIN  # без endswith("." + PANEL_DOMAIN)!
+
+
+def _forward_to_upstream(request: DNSRecord) -> Optional[bytes]:
+    """
+    Форвардим DNS-запрос целиком на апстрим (1.1.1.1 / 8.8.8.8 и т.п.).
+    Возвращаем сырые байты ответа или None при ошибке.
+    """
+    if not UPSTREAM_DNS:
+        return None
+
+    try:
+        qname = str(request.q.qname)
+        logger.info("↪️ Форвардим запрос %s на апстрим %s:%d", qname, UPSTREAM_DNS, UPSTREAM_PORT)
+        resp_bytes = request.send(UPSTREAM_DNS, UPSTREAM_PORT, timeout=2)
+        return resp_bytes
+    except Exception as e:
+        logger.warning("Ошибка при форвардинге на %s:%d: %s", UPSTREAM_DNS, UPSTREAM_PORT, e)
+        return None
+
+
+class DNSHandler(socketserver.BaseRequestHandler):
+    def handle(self):
+        data, sock = self.request
+        client_ip, client_port = self.client_address
+
+        try:
+            request = DNSRecord.parse(data)
+        except Exception as e:
+            logger.warning("Не удалось распарсить запрос от %s: %s", client_ip, e)
+            return
+
+        q = request.q
+        qname = str(q.qname)
+        qtype = QTYPE.get(q.qtype, "UNKNOWN")
+
+        logger.info("📥 Запрос от %s:%s — %s %s", client_ip, client_port, qname, qtype)
+
+        # --- Наши домены: включаем магию с sub_id и локациями ---
+        if qtype == "A" and _match_domain(qname):
+            reply = request.reply()
+            # авторитетный ответ, рекурсии не даём (для наших доменов)
+            reply.header.aa = 1
+            reply.header.ra = 0
+
+            try:
+                # 1) Статический IP для панели (если задан)
+                if PANEL_DOMAIN and PANEL_IP and _is_panel_domain(qname):
+                    ip = PANEL_IP
+                    logger.info(
+                        "📤 Ответ для ПАНЕЛИ %s (client=%s): статический IP %s (TTL=%s)",
+                        qname,
+                        client_ip,
+                        ip,
+                        TTL,
+                    )
+                    reply.add_answer(
+                        RR(
+                            rname=qname,
+                            rtype=QTYPE.A,
+                            rclass=1,
+                            ttl=TTL,
+                            rdata=A(ip),
+                        )
+                    )
+
+                # 2) Все остальные: sub_id + user_locator + балансер
+                elif IPS:
+                    try:
+                        result = USER_LOCATOR.choose_ip_for_qname(qname)
+
+                        # Поддерживаем и (ip, loc_pref, loc_name),
+                        # и (ip, loc_pref, loc_name, sub_id)
+                        if not isinstance(result, tuple):
+                            raise ValueError(
+                                f"USER_LOCATOR вернул не tuple: {type(result)!r}"
+                            )
+
+                        if len(result) == 3:
+                            ip, loc_pref, loc_name = result
+                            sub_id_for_log = None
+                        elif len(result) >= 4:
+                            ip, loc_pref, loc_name, sub_id_for_log = (
+                                result[0],
+                                result[1],
+                                result[2],
+                                result[3],
+                            )
+                        else:
+                            raise ValueError(
+                                f"USER_LOCATOR вернул tuple странной длины: {len(result)}"
+                            )
+
+                    except Exception as e:
+                        logger.exception(
+                            "Ошибка в USER_LOCATOR для %s: %s — откатываемся к auto/первому IP",
+                            qname,
+                            e,
+                        )
+                        ip = IPS[0] if IPS else None
+                        loc_pref = "auto"
+                        loc_name = BALANCER.describe_ip(ip) if ip else "Нет IP"
+                        sub_id_for_log = None
+
+                    # fallback, если локатор вернул None
+                    if not ip:
+                        if IPS:
+                            ip = IPS[0]
+                            loc_pref = "auto"
+                            loc_name = BALANCER.describe_ip(ip)
+                            sub_id_for_log = None
+                        else:
+                            logger.info(
+                                "NXDOMAIN для %s (client=%s): нет IP в пуле IPS даже для fallback",
+                                qname,
+                                client_ip,
+                            )
+                            reply.header.rcode = 3  # NXDOMAIN
+
+                    if ip:
+                        logger.info(
+                            "📤 Ответ для %s (client=%s, loc_pref=%s, sub_id=%s): выбран IP %s (%s) (TTL=%s)",
+                            qname,
+                            client_ip,
+                            loc_pref,
+                            sub_id_for_log,
+                            ip,
+                            loc_name,
+                            TTL,
+                        )
+                        reply.add_answer(
+                            RR(
+                                rname=qname,
+                                rtype=QTYPE.A,
+                                rclass=1,
+                                ttl=TTL,
+                                rdata=A(ip),
+                            )
+                        )
+
+                else:
+                    # Нет IP в пуле
+                    logger.info(
+                        "NXDOMAIN для %s (client=%s): нет IP в пуле IPS",
+                        qname,
+                        client_ip,
+                    )
+                    reply.header.rcode = 3  # NXDOMAIN
+
+            except Exception as e:
+                # Любая ошибка в нашей логике → логируем и шлём NXDOMAIN, чтобы не вешать клиента
+                logger.exception("Исключение при обработке нашего домена %s: %s", qname, e)
+                reply = request.reply()
+                reply.header.aa = 1
+                reply.header.ra = 0
+                reply.header.rcode = 3  # NXDOMAIN
+
+            try:
+                sock.sendto(reply.pack(), self.client_address)
+            except Exception as e:
+                logger.warning("Ошибка отправки ответа клиенту %s: %s", client_ip, e)
+            return
+
+        # --- НЕ наши домены: форвардим на апстрим и возвращаем как есть ---
+        try:
+            upstream_resp = _forward_to_upstream(request)
+        except Exception as e:
+            logger.exception("Исключение при форвардинге %s: %s", qname, e)
+            upstream_resp = None
+
+        if upstream_resp is not None:
+            try:
+                sock.sendto(upstream_resp, self.client_address)
+            except Exception as e:
+                logger.warning("Ошибка отправки форварженного ответа клиенту %s: %s", client_ip, e)
+            return
+
+        # Если до сюда дошли — ни апстрима, ни нашего ответа → NXDOMAIN
+        logger.info(
+            "NXDOMAIN (без апстрима) для %s (client=%s): тип=%s",
+            qname,
+            client_ip,
+            qtype,
+        )
+        fallback = request.reply()
+        fallback.header.aa = 1
+        fallback.header.ra = 0
+        fallback.header.rcode = 3  # NXDOMAIN
+        try:
+            sock.sendto(fallback.pack(), self.client_address)
+        except Exception as e:
+            logger.warning("Ошибка отправки fallback-ответа клиенту %s: %s", client_ip, e)
+
+
+class ThreadedUDPServer(socketserver.ThreadingMixIn, socketserver.UDPServer):
+    allow_reuse_address = True
+
+
+DNS_SERVER: ThreadedUDPServer | None = None
+DNS_THREAD: threading.Thread | None = None
+
+
+def create_dns_server() -> ThreadedUDPServer:
+    """
+    Создаёт (один раз) экземпляр DNS-сервера и возвращает его.
+    """
+    global DNS_SERVER
+
+    if DNS_SERVER is not None:
+        return DNS_SERVER
+
+    host = os.getenv("DNS_BIND_HOST", "0.0.0.0")
+    port = int(os.getenv("DNS_BIND_PORT", "53"))
+
+    DNS_SERVER = ThreadedUDPServer((host, port), DNSHandler)
+    logger.info(
+        "DNS-балансер инициализирован на %s:%d (upstream=%s:%d)",
+        host,
+        port,
+        UPSTREAM_DNS,
+        UPSTREAM_PORT,
+    )
+    return DNS_SERVER
+
+
+def run_dns_server_blocking():
+    """
+    Блокирующий запуск (для самостоятельного запуска как скрипта).
+    """
+    server = create_dns_server()
+    logger.info("DNS-балансер запущен (blocking mode)")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        logger.info("Останавливаем DNS-сервер (Ctrl+C)")
+    finally:
+        server.server_close()
+        logger.info("DNS-сервер остановлен")
+
+
+def start_dns_server_in_background():
+    """
+    Запускает DNS-сервер в отдельном потоке (НЕ блокирует основной поток).
+    Удобно вызывать из main.py бота.
+    """
+    global DNS_THREAD
+
+    server = create_dns_server()
+
+    # если уже запущен — ничего не делаем
+    if DNS_THREAD is not None and DNS_THREAD.is_alive():
+        return server, DNS_THREAD
+
+    DNS_THREAD = threading.Thread(target=server.serve_forever, daemon=True)
+    DNS_THREAD.start()
+    logger.info("DNS-балансер запущен в фоне (thread)")
+    return server, DNS_THREAD
+
+
+def stop_dns_server():
+    """
+    Аккуратная остановка сервера (используется из main.py).
+    """
+    global DNS_SERVER, DNS_THREAD
+
+    if DNS_SERVER is not None:
+        try:
+            DNS_SERVER.shutdown()
+            DNS_SERVER.server_close()
+            logger.info("DNS-балансер корректно остановлен")
+        except Exception as e:
+            logger.warning("Ошибка при остановке DNS-сервера: %s", e)
+        finally:
+            DNS_SERVER = None
+
+    if DNS_THREAD is not None:
+        try:
+            DNS_THREAD.join(timeout=1.0)
+        except Exception:
+            pass
+        DNS_THREAD = None
+
+
+if __name__ == "__main__":
+    run_dns_server_blocking()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#!/usr/bin/env python3
+# traffic_monitor.py
+from __future__ import annotations
+
+import os
+import re
+import asyncio
+import time
+import json
+import logging
+import socket  # Добавлен импорт socket в начало
+import statistics
+import aiohttp
+from typing import Dict, Any, List, Optional, Tuple, Callable
+
+# ---- Settings ----
+MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_FILE = os.path.join(MODULE_DIR, "traffic_data.json")
+LOG_FILE = os.path.join(MODULE_DIR, "traffic_monitor.log")
+
+SAMPLE_RATE = 5.0
+WINDOW_SECS = 60.0
+CONNECT_TIMEOUT = 1.5
+LOG_LEVEL = "INFO"
+
+# Создаем директорию для логов если нет
+os.makedirs(MODULE_DIR, exist_ok=True)
+
+# Настройка логирования
+logging.basicConfig(
+    level=LOG_LEVEL, 
+    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+LOG = logging.getLogger("traffic_monitor")
+
+def _host_to_ip(host: str) -> Optional[str]:
+    """Преобразует домен в IP для traffic monitor"""
+    if not host:
+        return None
+        
+    # Проверяем, это уже IP?
+    try:
+        socket.inet_aton(host)
+        return host
+    except OSError:
+        pass
+
+    # Специфичные маппинги для ваших серверов
+    env_lt = os.getenv("KINGLINE_LT_IP", "").strip()
+    env_nl = os.getenv("KINGLINE_NL_IP", "").strip()
+    
+    if "vpn.kingline.online" in host and env_lt:
+        return env_lt
+    if "net.kingline.online" in host and env_nl:
+        return env_nl
+
+    # Пробуем DNS
+    try:
+        return socket.gethostbyname(host)
+    except (socket.gaierror, OSError):
+        return host  # Возвращаем домен как fallback
+
+class TrafficMonitor:
+    """
+    Асинхронный монитор трафика для сбора метрик с X-UI панелей.
+    """
+    
+    def __init__(
+        self,
+        *,
+        poll_interval: float = 60.0,
+        on_cycle_complete: Optional[Callable[[Dict[str, Dict[str, Any]]], None]] = None,
+    ):
+        self.servers = self._discover_panels()
+        self._session: Optional[aiohttp.ClientSession] = None
+        self._stop: bool = False
+        self._last_cleanup: float = time.time()
+        self._task: Optional[asyncio.Task] = None
+        self._poll_interval = float(poll_interval)
+        self._on_cycle_complete = on_cycle_complete
+        
+        LOG.info(f"TrafficMonitor инициализирован. Серверов: {len(self.servers)}, интервал: {poll_interval}с")
+
+    def _discover_panels(self) -> Dict[str, Dict[str, str]]:
+        """Обнаруживает панели из переменных окружения."""
+        pattern = re.compile(r"^XUI_BASE_(\d+)$")
+        servers: Dict[str, Dict[str, str]] = {}
+        
+        for k, v in list(os.environ.items()):
+            m = pattern.match(k)
+            if not m:
+                continue
+                
+            idx = m.group(1)
+            base = v.strip()
+            cookie = os.environ.get(f"XUI_COOKIE_{idx}", "").strip()
+            
+            if not cookie:
+                LOG.warning("Найден %s, но XUI_COOKIE_%s не задан — пропускаем", base, idx)
+                continue
+
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(base)
+                host = parsed.hostname or base.rstrip("/").split("/")[-1]
+            except Exception as e:
+                LOG.warning("Ошибка парсинга URL %s: %s", base, e)
+                host = base.rstrip("/").split("/")[-1]
+
+            name = host
+            servers[name] = {"base": base, "cookie": cookie}
+            LOG.debug("Добавлен сервер: %s -> %s", name, base)
+        
+        LOG.info("Обнаружено %d серверов для мониторинга: %s", 
+                len(servers), ", ".join(servers.keys()))
+        return servers
+
+    async def _ensure_session(self) -> None:
+        """Создает aiohttp сессию если ее нет."""
+        if not self._session:
+            self._session = aiohttp.ClientSession(
+                headers={
+                    "Accept": "application/json, text/plain, */*",
+                    "X-Requested-With": "XMLHttpRequest",
+                    "User-Agent": "traffic-monitor/1.0",
+                },
+                timeout=aiohttp.ClientTimeout(total=10)
+            )
+
+    async def _fetch_status(self, base: str, cookie: str, timeout: int = 10) -> Dict[str, Any]:
+        """Запрашивает статус сервера."""
+        await self._ensure_session()
+        url = self._choose_status_url(base)
+        
+        try:
+            async with self._session.get(
+                url, 
+                headers={"Cookie": cookie}, 
+                timeout=aiohttp.ClientTimeout(total=timeout)
+            ) as response:
+                txt = await response.text()
+                
+                if response.status != 200:
+                    LOG.warning("HTTP %d от %s: %s", response.status, url, txt[:200])
+                    return {}
+                    
+                try:
+                    data = json.loads(txt)
+                except json.JSONDecodeError as e:
+                    LOG.warning("Не JSON от %s: %s. Ошибка: %s", url, txt[:200], e)
+                    return {}
+                    
+                if isinstance(data, dict) and "obj" in data and isinstance(data["obj"], dict):
+                    return data["obj"]
+                if isinstance(data, dict):
+                    return data
+                else:
+                    LOG.warning("Неожиданный формат ответа от %s: %s", url, type(data))
+                    return {}
+                    
+        except asyncio.TimeoutError:
+            LOG.warning("Таймаут запроса к %s", url)
+            return {}
+        except Exception as e:
+            LOG.warning("Ошибка запроса статуса %s: %s", url, e)
+            return {}
+
+    def _choose_status_url(self, base: str) -> str:
+        """Выбирает правильный URL для запроса статуса."""
+        b = base.rstrip("/")
+        if b.endswith("/panel"):
+            return f"{b}/api/server/status"
+        return f"{b}/panel/api/server/status"
+
+    @staticmethod
+    def _extract_bytes(obj: Dict[str, Any]) -> Tuple[int, int]:
+        """Извлекает значения переданных/принятых байт из объекта статуса."""
+        up = down = 0
+        try:
+            nio = obj.get("netIO", {})
+            if isinstance(nio, dict):
+                up = int(nio.get("up", up) or up)
+                down = int(nio.get("down", down) or down)
+        except (ValueError, TypeError):
+            pass
+            
+        if up == 0 and down == 0:
+            try:
+                nt = obj.get("netTraffic", {})
+                if isinstance(nt, dict):
+                    up = int(nt.get("sent", up) or up)
+                    down = int(nt.get("recv", down) or down)
+            except (ValueError, TypeError):
+                pass
+                
+        return int(up or 0), int(down or 0)
+
+    async def _get_online_clients(self, base: str, cookie: str) -> int:
+        """Получает количество онлайн клиентов."""
+        url = f"{base.rstrip('/')}/api/inbounds/onlines"
+        try:
+            await self._ensure_session()
+            async with self._session.post(
+                url, 
+                headers={"Cookie": cookie}, 
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as response:
+                txt = await response.text()
+                
+                if response.status != 200:
+                    LOG.debug("HTTP %d при получении онлайн клиентов: %s", response.status, txt[:100])
+                    return 0
+                    
+                try:
+                    data = json.loads(txt)
+                    if isinstance(data, dict) and "obj" in data and isinstance(data["obj"], list):
+                        return len(data["obj"])
+                    if isinstance(data, list):
+                        return len(data)
+                    else:
+                        LOG.debug("Неожиданный формат онлайн клиентов: %s", type(data))
+                        return 0
+                except Exception as e:
+                    LOG.debug("Ошибка парсинга онлайн клиентов: %s", e)
+                    return 0
+                    
+        except Exception as e:
+            LOG.debug("Ошибка получения онлайн клиентов %s: %s", url, e)
+            return 0
+
+    async def _measure_latency(self, host: str) -> float:
+        """Измеряет задержку до сервера."""
+        try:
+            if "://" in host:
+                host = host.split("://")[1].split("/")[0]
+            host = host.split(":")[0]
+            start = time.monotonic()
+            fut = asyncio.open_connection(host, 443)
+            coro = asyncio.wait_for(fut, timeout=CONNECT_TIMEOUT)
+            reader, writer = await coro
+            latency = time.monotonic() - start
+            writer.close()
+            await writer.wait_closed()
+            return max(0.0, latency)
+        except asyncio.TimeoutError:
+            LOG.debug("Таймаут измерения задержки для %s", host)
+            return -1.0
+        except Exception as e:
+            LOG.debug("Ошибка измерения задержки для %s: %s", host, e)
+            return -1.0
+
+    async def _measure_speed(self, cfg: Dict[str, str]) -> Dict[str, float]:
+        """Измеряет скорость передачи данных."""
+        samples: List[float] = []
+        obj = await self._fetch_status(cfg["base"], cfg["cookie"])
+        up0, down0 = self._extract_bytes(obj)
+        t0 = time.monotonic()
+        last_up, last_down = up0, down0
+        last_t = t0
+        end = t0 + 10
+
+        while time.monotonic() < end and not self._stop:
+            await asyncio.sleep(2)
+            o = await self._fetch_status(cfg["base"], cfg["cookie"])
+            upn, downn = self._extract_bytes(o)
+            tn = time.monotonic()
+            delta = max(0, (upn - last_up) + (downn - last_down))
+            dt = max(1e-6, tn - last_t)
+            inst = delta / dt
+            samples.append(inst)
+            last_up, last_down = upn, downn
+            last_t = tn
+
+        if not samples:
+            return {"avg": 0.0, "peak": 0.0}
+
+        return {"avg": statistics.mean(samples), "peak": max(samples) if samples else 0.0}
+
+    async def collect_metrics(self) -> Dict[str, Dict[str, Any]]:
+        """Собирает метрики со всех серверов."""
+        metrics: Dict[str, Dict[str, Any]] = {}
+        
+        if not self.servers:
+            LOG.warning("Нет серверов для мониторинга!")
+            return metrics
+            
+        LOG.info("Начинаем сбор метрик для %d серверов", len(self.servers))
+        
+        for host, cfg in self.servers.items():
+            try:
+                LOG.debug("Сбор метрик для %s", host)
+                online_clients = await self._get_online_clients(cfg["base"], cfg["cookie"])
+                speed_stats = await self._measure_speed(cfg)
+                latency = await self._measure_latency(cfg["base"])
+                
+                # Преобразуем домен в IP для хранения
+                host_ip = _host_to_ip(host) or host
+                
+                metrics[host_ip] = {  # Сохраняем по IP вместо домена
+                    "online_clients": online_clients,
+                    "speed_avg": speed_stats["avg"],
+                    "speed_peak": speed_stats["peak"],
+                    "latency": latency,
+                    "timestamp": time.time(),
+                    "original_host": host  # Сохраняем оригинальное имя для отладки
+                }
+                
+                LOG.info("Собраны метрики для %s -> %s: %d клиентов, скорость=%.1f, задержка=%.3fs",
+                         host, host_ip, online_clients, speed_stats["avg"], latency)
+                         
+            except Exception as e:
+                LOG.error("Ошибка сбора метрик для %s: %s", host, e)
+                host_ip = _host_to_ip(host) or host
+                metrics[host_ip] = {
+                    "online_clients": 0,
+                    "speed_avg": 0.0,
+                    "speed_peak": 0.0,
+                    "latency": -1.0,
+                    "timestamp": time.time(),
+                    "original_host": host
+                }
+
+        return metrics
+
+    def load_data(self) -> List[Dict[str, Any]]:
+        """Загружает исторические данные из файла."""
+        try:
+            if os.path.exists(DATA_FILE):
+                with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        LOG.debug("Загружено %d записей из %s", len(data), DATA_FILE)
+                        return data
+        except Exception as e:
+            LOG.error("Ошибка загрузки данных из %s: %s", DATA_FILE, e)
+        return []
+
+    def save_data(self, data: List[Dict[str, Any]]) -> None:
+        """Сохраняет данные в файл."""
+        try:
+            with open(DATA_FILE, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            LOG.debug("Сохранено %d записей в %s", len(data), DATA_FILE)
+        except Exception as e:
+            LOG.error("Ошибка сохранения данных в %s: %s", DATA_FILE, e)
+
+    def cleanup_old_data(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Очищает старые данные (старше 6 часов)."""
+        now = time.time()
+        six_hours_ago = now - 6 * 3600
+        old_count = len(data)
+        cleaned = [entry for entry in data if entry.get('timestamp', 0) > six_hours_ago]
+        new_count = len(cleaned)
+        
+        if old_count != new_count:
+            LOG.info("Очистка данных: %d -> %d записей (удалено %d старых)", 
+                    old_count, new_count, old_count - new_count)
+                    
+        return cleaned
+
+    async def run_monitoring_cycle(self) -> None:
+        """Выполняет один цикл мониторинга."""
+        LOG.info("Запуск цикла мониторинга...")
+        
+        try:
+            metrics = await self.collect_metrics()
+            data = self.load_data()
+
+            current_time = time.time()
+            if current_time - self._last_cleanup >= 6 * 3600:
+                data = self.cleanup_old_data(data)
+                self._last_cleanup = current_time
+
+            entry = {"timestamp": current_time, "metrics": metrics}
+            data.append(entry)
+            self.save_data(data)
+
+            if self._on_cycle_complete:
+                try:
+                    self._on_cycle_complete(metrics)
+                except Exception as e:
+                    LOG.warning("on_cycle_complete callback failed: %s", e)
+
+            # Логируем статус
+            LOG.info("Метрики собраны. Серверы: %s", list(metrics.keys()))
+            
+        except Exception as e:
+            LOG.error("Критическая ошибка в цикле мониторинга: %s", e)
+
+    async def _background_loop(self) -> None:
+        """Основной цикл работы в фоне."""
+        LOG.info("TrafficMonitor background loop started")
+        cycle_count = 0
+        
+        while not self._stop:
+            try:
+                cycle_count += 1
+                LOG.debug("Цикл мониторинга #%d", cycle_count)
+                await self.run_monitoring_cycle()
+            except Exception as e:
+                LOG.error("Ошибка в цикле мониторинга #%d: %s", cycle_count, e)
+                
+            try:
+                await asyncio.sleep(self._poll_interval)
+            except asyncio.CancelledError:
+                LOG.info("Фоновая задача отменена")
+                break
+                
+        LOG.info("TrafficMonitor background loop exiting")
+
+    def start_background(self) -> None:
+        """Запускает мониторинг в фоне."""
+        if self._task and not self._task.done():
+            LOG.warning("TrafficMonitor уже запущен")
+            return
+            
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            # Если нет текущего loop, создаем новый
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+        self._stop = False
+        self._task = loop.create_task(self._background_loop())
+        LOG.info("Фоновая задача TrafficMonitor создана")
+
+    async def stop(self) -> None:
+        """Останавливает мониторинг."""
+        LOG.info("Остановка TrafficMonitor...")
+        self._stop = True
+        
+        if self._task:
+            try:
+                await asyncio.wait_for(self._task, timeout=5.0)
+                LOG.info("Фоновая задача корректно завершена")
+            except asyncio.TimeoutError:
+                LOG.warning("Таймаут ожидания завершения фоновой задачи")
+                self._task.cancel()
+            except Exception as e:
+                LOG.warning("Ошибка при остановке фоновой задачи: %s", e)
+            finally:
+                self._task = None
+
+        if self._session:
+            await self._session.close()
+            self._session = None
+            LOG.info("HTTP сессия закрыта")
+
+__all__ = ["TrafficMonitor", "DATA_FILE"]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# refferal/ref_db.py
+
+import sqlite3
+import json
+from typing import Any, Dict, List, Optional, Tuple
+from contextlib import closing
+
+
+class ReferralDB:
+    """
+    Хранилище реферальной информации в отдельной БД ref.db.
+
+    Таблица referrals:
+      - inviter_tg_id : tg_id пригласившего (уникальный)
+      - ref_code      : реферальный код пригласившего (уникальный)
+      - invited_json  : JSON-массив объектов:
+                        [{"tg_id": 123, "rewarded": 0}, ...]
+                        rewarded=1 означает, что за этого друга бонус уже выдан.
+    """
+
+    def __init__(self, path: str = "ref.db"):
+        self.path = path
+        self._init_db()
+
+    # ===== internals =====
+
+    def _connect(self) -> sqlite3.Connection:
+        return sqlite3.connect(self.path, check_same_thread=False)
+
+    def _init_db(self) -> None:
+        with self._connect() as conn, closing(conn.cursor()) as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS referrals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    inviter_tg_id INTEGER UNIQUE NOT NULL,
+                    ref_code TEXT UNIQUE NOT NULL,
+                    invited_json TEXT DEFAULT '[]'
+                )
+                """
+            )
+            conn.commit()
+
+    # ===== helpers =====
+
+    @staticmethod
+    def _row_to_dict(row: tuple) -> Dict[str, Any]:
+        if not row:
+            return {}
+        cols = ["id", "inviter_tg_id", "ref_code", "invited_json"]
+        return dict(zip(cols, row))
+
+    @staticmethod
+    def _parse_invited(invited_json: str) -> List[Dict[str, Any]]:
+        if not invited_json:
+            return []
+        try:
+            data = json.loads(invited_json)
+            if isinstance(data, list):
+                return data
+            return []
+        except Exception:
+            return []
+
+    @staticmethod
+    def _dump_invited(items: List[Dict[str, Any]]) -> str:
+        return json.dumps(items, ensure_ascii=False)
+
+    # ===== basic queries =====
+
+    def get_by_inviter(self, inviter_tg_id: int) -> Optional[Dict[str, Any]]:
+        with self._connect() as conn, closing(conn.cursor()) as cur:
+            cur.execute(
+                """
+                SELECT id, inviter_tg_id, ref_code, invited_json
+                FROM referrals
+                WHERE inviter_tg_id = ?
+                """,
+                (inviter_tg_id,),
+            )
+            row = cur.fetchone()
+        return self._row_to_dict(row) if row else None
+
+    def get_by_code(self, code: str) -> Optional[Dict[str, Any]]:
+        code = (code or "").strip().upper()
+        if not code:
+            return None
+
+        with self._connect() as conn, closing(conn.cursor()) as cur:
+            cur.execute(
+                """
+                SELECT id, inviter_tg_id, ref_code, invited_json
+                FROM referrals
+                WHERE ref_code = ?
+                """,
+                (code,),
+            )
+            row = cur.fetchone()
+        return self._row_to_dict(row) if row else None
+
+    def get_invitation_for_invited(
+        self, invited_tg_id: int
+    ) -> Optional[Tuple[int, bool]]:
+        """
+        Найти, есть ли уже запись о том, что invited_tg_id
+        использовал чей-то реферальный код.
+
+        Возвращает (inviter_tg_id, rewarded_already) или None.
+        """
+        with self._connect() as conn, closing(conn.cursor()) as cur:
+            cur.execute(
+                "SELECT inviter_tg_id, invited_json FROM referrals"
+            )
+            rows = cur.fetchall()
+
+        for inviter_tg_id, invited_json in rows:
+            items = self._parse_invited(invited_json or "[]")
+            for it in items:
+                if int(it.get("tg_id") or 0) == int(invited_tg_id):
+                    rewarded = bool(it.get("rewarded"))
+                    return int(inviter_tg_id), rewarded
+
+        return None
+
+    # ===== public API =====
+
+    def get_or_create_code(self, inviter_tg_id: int) -> str:
+        """
+        Гарантирует наличие реферального кода для пользователя.
+        Возвращает сам код.
+        """
+        row = self.get_by_inviter(inviter_tg_id)
+        if row and row.get("ref_code"):
+            return str(row["ref_code"])
+
+        # создаём новый код
+        code = self._generate_unique_code()
+
+        with self._connect() as conn, closing(conn.cursor()) as cur:
+            cur.execute(
+                """
+                INSERT INTO referrals (inviter_tg_id, ref_code, invited_json)
+                VALUES (?, ?, '[]')
+                ON CONFLICT(inviter_tg_id) DO UPDATE SET
+                    ref_code = excluded.ref_code
+                """,
+                (inviter_tg_id, code),
+            )
+            conn.commit()
+
+        return code
+
+    def add_invited_user(self, inviter_tg_id: int, invited_tg_id: int) -> None:
+        """
+        Добавляет invited_tg_id в список приглашённых для inviter_tg_id,
+        если его там ещё нет. rewarded по умолчанию = 0.
+        """
+        row = self.get_by_inviter(inviter_tg_id)
+        if not row:
+            # если почему-то нет строки — создаём код по умолчанию
+            ref_code = self._generate_unique_code()
+            invited_items: List[Dict[str, Any]] = []
+        else:
+            ref_code = row["ref_code"]
+            invited_items = self._parse_invited(row.get("invited_json") or "[]")
+
+        for it in invited_items:
+            if int(it.get("tg_id") or 0) == int(invited_tg_id):
+                # уже есть, ничего не меняем
+                return
+
+        invited_items.append({"tg_id": int(invited_tg_id), "rewarded": 0})
+
+        invited_json = self._dump_invited(invited_items)
+
+        with self._connect() as conn, closing(conn.cursor()) as cur:
+            cur.execute(
+                """
+                INSERT INTO referrals (inviter_tg_id, ref_code, invited_json)
+                VALUES (?, ?, ?)
+                ON CONFLICT(inviter_tg_id) DO UPDATE SET
+                    ref_code = excluded.ref_code,
+                    invited_json = excluded.invited_json
+                """,
+                (inviter_tg_id, ref_code, invited_json),
+            )
+            conn.commit()
+
+    def mark_rewarded(self, inviter_tg_id: int, invited_tg_id: int) -> None:
+        """
+        Помечает, что за invited_tg_id бонус уже выдан.
+        """
+        row = self.get_by_inviter(inviter_tg_id)
+        if not row:
+            return
+
+        invited_items = self._parse_invited(row.get("invited_json") or "[]")
+
+        changed = False
+        for it in invited_items:
+            if int(it.get("tg_id") or 0) == int(invited_tg_id):
+                if not it.get("rewarded"):
+                    it["rewarded"] = 1
+                    changed = True
+
+        if not changed:
+            return
+
+        invited_json = self._dump_invited(invited_items)
+
+        with self._connect() as conn, closing(conn.cursor()) as cur:
+            cur.execute(
+                """
+                UPDATE referrals
+                SET invited_json = ?
+                WHERE inviter_tg_id = ?
+                """,
+                (invited_json, inviter_tg_id),
+            )
+            conn.commit()
+
+    # ===== вспомогательные методы =====
+
+    def _generate_unique_code(self, length: int = 8) -> str:
+        """
+        Генерирует уникальный реферальный код (A-Z0-9) заданной длины.
+        """
+        import secrets
+        import string
+
+        alphabet = string.ascii_uppercase + string.digits
+        while True:
+            code = "".join(secrets.choice(alphabet) for _ in range(length))
+            if not self.get_by_code(code):
+                return code
+
+
+
+
+
+
+
+
+
+
+# refferal/service.py
+
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime, timezone, timedelta
+from typing import Optional, Tuple
+
+from telegram.ext import ContextTypes
+
+from config import db, logger
+from utils import now_iso
+from handlers.billing_db import BillingDB
+from .ref_db import ReferralDB
+
+
+class ReferralService:
+    """
+    Основная логика реферальной системы.
+    """
+
+    def __init__(self, storage: ReferralDB):
+        self.storage = storage
+
+    # ===== ПУБЛИЧНЫЕ МЕТОДЫ ДЛЯ ХЕНДЛЕРОВ =====
+
+    def get_or_create_user_code(self, tg_id: int) -> str:
+        return self.storage.get_or_create_code(tg_id)
+
+    def get_invitation_info_for_user(self, invited_tg_id: int) -> Optional[Tuple[int, bool]]:
+        return self.storage.get_invitation_for_invited(invited_tg_id)
+
+    def get_inviter_by_code(self, code: str) -> Optional[int]:
+        row = self.storage.get_by_code(code)
+        if not row:
+            return None
+        return int(row["inviter_tg_id"])
+
+    def register_code_usage(
+        self,
+        invited_tg_id: int,
+        code_raw: str,
+    ) -> Tuple[bool, str]:
+        code = (code_raw or "").strip().upper().replace(" ", "")
+        if not code:
+            return False, "❌ Введён пустой код."
+
+        row = self.storage.get_by_code(code)
+        if not row:
+            return False, "❌ Такой реферальный код не найден."
+
+        inviter_tg_id = int(row["inviter_tg_id"])
+
+        if inviter_tg_id == invited_tg_id:
+            return False, "😅 Нельзя использовать собственный реферальный код."
+
+        invitation = self.storage.get_invitation_for_invited(invited_tg_id)
+        if invitation is not None:
+            return False, "⚠️ Ты уже использовал реферальный код ранее."
+
+        self.storage.add_invited_user(inviter_tg_id, invited_tg_id)
+
+        return (
+            True,
+            "✅ Код принят!\n\n"
+            "Как только ты активируешь полный тариф, "
+            "твоему другу автоматически продлят подписку на 30 дней 💎",
+        )
+
+    async def handle_premium_activated(
+        self,
+        invited_tg_id: int,
+        context: ContextTypes.DEFAULT_TYPE,
+        invited_chat_id: Optional[int] = None,
+    ) -> None:
+        """
+        Вызывается когда invited_tg_id оформил полный тариф.
+        Добавляем задержку 30 секунд перед продлением подписки пригласившему.
+        """
+        info = self.storage.get_invitation_for_invited(invited_tg_id)
+        if not info:
+            return
+
+        inviter_tg_id, rewarded_already = info
+        if rewarded_already:
+            return
+
+        # Создаем отложенную задачу с задержкой 30 секунд
+        async def delayed_reward():
+            try:
+                # Ждем 30 секунд
+                await asyncio.sleep(30)
+                
+                # Продлеваем подписку пригласившему
+                await self._extend_inviter_subscription(inviter_tg_id, context)
+
+                # Помечаем, что бонус выдан
+                self.storage.mark_rewarded(inviter_tg_id, invited_tg_id)
+
+                # Уведомления
+                await self._send_reward_notifications(
+                    inviter_tg_id, invited_tg_id, invited_chat_id, context
+                )
+
+            except Exception:
+                logger.exception("Ошибка при продлении подписки по рефералке")
+
+        # Запускаем отложенную задачу
+        asyncio.create_task(delayed_reward())
+
+    async def _send_reward_notifications(
+        self,
+        inviter_tg_id: int,
+        invited_tg_id: int,
+        invited_chat_id: Optional[int],
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """Отправка уведомлений о бонусе с задержкой"""
+        try:
+            await context.bot.send_message(
+                chat_id=inviter_tg_id,
+                text=(
+                    "🎁 <b>Реферальный бонус!</b>\n\n"
+                    "Твой друг активировал полный тариф по твоему коду.\n"
+                    "Мы продлили твою подписку на <b>30 дней</b> 💎\n"
+                    "<i>Пожалуйста, не забудь обновить подписку в приложении, нажав 🔄.</i>"
+                ),
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.warning("Не удалось отправить сообщение пригласившему: %s", e)
+
+        if invited_chat_id:
+            try:
+                await context.bot.send_message(
+                    chat_id=invited_chat_id,
+                    text=(
+                        "🙏 Спасибо, что оформил подписку по реферальному коду.\n"
+                        "Твоему другу только что продлили подписку на 30 дней 💌"
+                    ),
+                )
+            except Exception as e:
+                logger.warning("Не удалось отправить сообщение приглашённому: %s", e)
+
+    # ===== ОБНОВЛЕННАЯ ЛОГИКА ПРОДЛЕНИЯ =====
+
+    async def _extend_inviter_subscription(
+        self,
+        inviter_tg_id: int,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """
+        Продлевает подписку пригласившему на 30 дней.
+        Использует ту же логику, что и основная система тарифов.
+        """
+        existing = db.get_user(inviter_tg_id) or {}
+        
+        tg_name = existing.get("tg_name") or ""
+        username_clean = (existing.get("username") or f"user{inviter_tg_id}").replace(" ", "")
+
+        # Убеждаемся, что пользователь есть в базе
+        BillingDB.ensure_user_row(inviter_tg_id, tg_name, username_clean)
+        existing = db.get_user(inviter_tg_id) or {}  # Обновляем данные
+
+        sub_id = existing.get("sub_id")
+        if not sub_id:
+            # Создаем новый sub_id, если его нет
+            sub_id = BillingDB.generate_sub_id(inviter_tg_id, tg_name, username_clean)
+
+        prev_free_used = int(existing.get("free_used") or 0)
+        had_link_before = bool(existing.get("sub_id"))
+
+        # Определяем базовую дату для продления (максимум из текущей даты и даты окончания текущей подписки)
+        base_exp = datetime.now(timezone.utc)
+        try:
+            ke = existing.get("key_expires_at")
+            if ke:
+                db_exp = datetime.strptime(ke, "%Y-%m-%dT%H:%M:%SZ").replace(
+                    tzinfo=timezone.utc
+                )
+                if db_exp > base_exp:
+                    base_exp = db_exp
+        except Exception:
+            pass
+
+        try:
+            # Удаляем старых клиентов пользователя
+            await BillingDB.delete_all_user_clients(
+                sub_id=sub_id,
+                username_clean=username_clean,
+            )
+
+            # Новый срок: +30 дней от базовой даты
+            expire_dt = base_exp + timedelta(days=30)
+            expiry_time_ms = int(expire_dt.timestamp() * 1000)
+
+            # Создаем новых клиентов
+            client_ids, expiry_ts = await BillingDB.create_clients_for_user(
+                sub_id=sub_id,
+                username_clean=username_clean,
+                expiry_time_ms=expiry_time_ms,
+            )
+
+            key_created_at = now_iso()
+
+            # Определяем дату окончания
+            if expiry_ts:
+                dt = datetime.fromtimestamp(
+                    (expiry_ts / 1000) if expiry_ts > 10_000_000_000 else expiry_ts,
+                    tz=timezone.utc,
+                )
+                key_expires_at = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            else:
+                key_expires_at = expire_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+            # Обновляем запись в основной БД
+            db.upsert_after_create(
+                tg_id=inviter_tg_id,
+                tg_name=tg_name,
+                username=username_clean,
+                sub_id=sub_id,
+                sub_name=sub_id,
+                key_created_at=key_created_at,
+                key_expires_at=key_expires_at,
+                client_ids=client_ids,
+                tariff="premium",  # Пригласивший получает полный тариф
+                free_used=prev_free_used,
+            )
+
+            # Обновляем таймстампы подписки
+            BillingDB.update_subscription_timestamps(
+                tg_id=inviter_tg_id,
+                started_iso=key_created_at,
+                expires_iso=key_expires_at,
+            )
+
+            # Перезапуск Xray в фоне
+            asyncio.create_task(BillingDB.restart_xray_safe())
+
+            logger.info(f"Успешно продлена подписка по рефералке для пользователя {inviter_tg_id}")
+
+        except Exception as e:
+            logger.exception(f"Ошибка при продлении подписки по рефералке для {inviter_tg_id}")
+            raise
