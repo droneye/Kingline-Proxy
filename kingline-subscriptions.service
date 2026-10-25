@@ -1,0 +1,25 @@
+[Unit]
+Description=Kingline private subscription adapter
+After=network-online.target docker.service
+[Service]
+WorkingDirectory=/opt/kingline-control
+ExecStart=/opt/kingline-manager/venv/bin/uvicorn subscription_gateway:app --uds /run/kingline-subscriptions/gateway.sock --no-access-log --limit-concurrency 48
+ExecStartPre=/usr/bin/rm -f /run/kingline-subscriptions/gateway.sock
+ExecStartPost=/bin/sh -c 'while [ ! -S /run/kingline-subscriptions/gateway.sock ]; do sleep 0.1; done; chown root:101 /run/kingline-subscriptions/gateway.sock; chmod 660 /run/kingline-subscriptions/gateway.sock'
+RuntimeDirectory=kingline-subscriptions
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+# SQLite mode=ro still creates WAL coordination files after the last connection closes.
+# The adapter opens business data read-only; its containing directory must support WAL.
+ReadWritePaths=/run/kingline-subscriptions /opt/kingline-staging/data
+PrivateTmp=true
+MemoryMax=192M
+TasksMax=64
+UMask=0077
+[Install]
+WantedBy=multi-user.target

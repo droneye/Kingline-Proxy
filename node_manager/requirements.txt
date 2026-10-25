@@ -1,0 +1,4 @@
+fastapi==0.157.0
+uvicorn==0.54.0
+paramiko==5.1.0
+cryptography==50.0.2

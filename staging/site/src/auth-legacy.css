@@ -1,0 +1,84 @@
+/* Previous sign-in layout in the shared dark theme; scoped to guest screens. */
+.guest-layout {
+  --ink:#f3f4f7; --muted:#a2a8b4; --muted-strong:#c8ccd5;
+  --surface:#191d25; --surface-strong:#222833;
+  --line:#303642; --line-dark:#303642;
+  --red:#ff6a80; --red-dark:#ff8da0; --red-soft:rgba(255,106,128,.12);
+  color:var(--ink); color-scheme:dark;
+  width:min(100%,980px)!important; max-width:980px!important; margin:0 auto!important;
+  grid-template-columns:minmax(0,1fr) minmax(380px,430px)!important; gap:14px!important;
+  min-height:calc(100svh - 80px); align-items:stretch!important; align-content:center;
+}
+.guest-layout .liquid-card {
+  border:1px solid #303642!important; border-radius:28px!important;
+  background:linear-gradient(145deg,#222631,#191d25)!important;
+  box-shadow:inset 0 1px 0 #ffffff06,0 22px 58px #05070b44!important;
+}
+.guest-layout .hero-panel {display:grid;align-content:center!important;min-height:430px;padding:42px!important;}
+.guest-layout .hero-panel.has-runner {align-content:normal!important;}
+.guest-layout .hero-panel .eyebrow {
+  width:fit-content;margin:0!important;border:1px solid #ff6a8026;border-radius:99px;
+  background:#ff6a800c;padding:6px 10px;color:var(--red-dark)!important;
+  font-size:.72rem!important;font-weight:800;letter-spacing:0!important;
+}
+.guest-layout .hero-panel h1 {
+  max-width:500px!important;margin:10px 0 0!important;font-size:1.94rem!important;
+  font-weight:740!important;line-height:1.1!important;letter-spacing:0!important;
+}
+.guest-layout .hero-panel p {margin:12px 0 0!important;max-width:35rem!important;font-size:.94rem!important;line-height:1.62!important;color:var(--muted)!important;}
+.guest-layout .hero-seo-grid {display:grid!important;gap:7px!important;margin-top:14px!important;}
+.guest-layout .hero-seo-grid article {
+  display:grid;grid-template-rows:auto 1fr;gap:5px;min-height:66px;
+  padding:9px 10px!important;border:1px solid #ff6a8026!important;
+  border-radius:14px;background:#11151c66!important;box-shadow:none!important;
+}
+.guest-layout .hero-seo-grid strong {color:var(--ink)!important;font-size:.82rem!important;font-weight:880!important;line-height:1.18!important;}
+.guest-layout .hero-seo-grid span {margin:0!important;color:var(--muted)!important;font-size:.72rem!important;font-weight:640!important;line-height:1.32!important;}
+.guest-layout .auth-runner {display:grid!important;}
+.guest-layout .auth-panel {display:grid;align-content:center;min-width:0;min-height:430px;padding:16px!important;}
+.guest-layout .mode-control {
+  margin:0!important;padding:4px!important;border:1px solid #303642!important;
+  border-radius:20px!important;background:#11151c!important;
+  box-shadow:inset 0 1px 0 #ffffff05!important;
+}
+.guest-layout .mode-indicator {
+  border-radius:16px!important;background:linear-gradient(145deg,#ffffff12,transparent 34%),linear-gradient(135deg,#ff8295,#ed5672)!important;
+  box-shadow:inset 0 1px 0 #ffffff26,0 8px 24px #ff6a801f!important;
+  transition:transform .36s var(--ease-standard)!important;
+}
+.guest-layout .mode-button {min-height:46px!important;border-radius:16px!important;color:var(--muted-strong)!important;font-size:.9rem;font-weight:760!important;}
+.guest-layout .mode-button[aria-pressed=true] {color:#201117!important;}
+.guest-layout .auth-form {gap:18px!important;padding:24px 2px 2px;}
+.guest-layout .panel-heading h2 {color:var(--ink)!important;font-size:1.55rem!important;font-weight:760!important;line-height:1.12!important;letter-spacing:0!important;}
+.guest-layout .panel-heading p {color:var(--muted)!important;font-size:.91rem!important;line-height:1.62!important;}
+.guest-layout .field-label {gap:8px!important;color:var(--muted-strong)!important;font-size:.84rem!important;font-weight:720!important;}
+.guest-layout .glass-input {
+  min-height:54px!important;height:54px;padding:0 15px!important;border:1px solid #353c49!important;
+  border-radius:18px!important;background:#11151c!important;
+  color:var(--ink)!important;font-size:16px!important;box-shadow:inset 0 1px 0 #ffffff04!important;
+}
+.guest-layout .glass-input::placeholder {color:#818b9c!important;}
+.guest-layout .glass-input:focus {border-color:#ff6a8080!important;outline:none!important;box-shadow:0 0 0 4px #ff6a8021!important;}
+.guest-layout .password-field .glass-input {padding-right:104px!important;}
+.guest-layout .password-toggle {color:var(--red-dark)!important;border:1px solid #394150!important;background:#222833!important;border-radius:14px;}
+.guest-layout .primary-button {
+  min-height:48px;border-radius:18px!important;background:linear-gradient(145deg,#ffffff12,transparent 32%),linear-gradient(135deg,#ff8295,#ed5672)!important;
+  color:#201117!important;box-shadow:inset 0 1px 0 #ffffff26,0 12px 32px #ff6a801f!important;font-weight:780!important;
+}
+.guest-layout .secondary-button {color:var(--red-dark)!important;background:#222833!important;border-color:#394150!important;border-radius:18px!important;}
+.guest-layout .text-button {color:var(--red)!important;font-weight:780!important;}
+.guest-layout .switch-row {justify-content:center!important;gap:6px!important;font-size:.88rem!important;color:var(--muted)!important;}
+.guest-layout .auth-panel .switch-row:last-child {padding-top:0!important;border-top:0!important;}
+.guest-layout .auth-panel.is-confirming {align-content:start;grid-template-rows:auto auto;gap:28px;}
+.guest-layout .auth-form-confirm {padding-top:0;gap:16px!important;}
+.guest-layout button:focus-visible,.guest-layout a:focus-visible {outline-color:var(--red-dark);}
+@media(max-width:760px) {
+  .guest-layout {grid-template-columns:1fr!important;max-width:520px!important;gap:14px!important;min-height:0;}
+  .guest-layout .hero-panel {min-height:250px;padding:28px 22px!important;}
+  .guest-layout .hero-panel h1 {font-size:1.86rem!important;max-width:16ch!important;margin:10px 0 0!important;}
+  .guest-layout .auth-panel {min-height:0;padding:16px!important;}
+}
+@media(prefers-reduced-motion:reduce) {.guest-layout .mode-indicator{transition:none!important;}}
+
+.guest-layout .liquid-card::before {background:linear-gradient(118deg,#ffffff04,transparent 28%),linear-gradient(292deg,transparent 36%,#ffffff02,transparent 54%)!important;}
+.guest-layout .glass-input:-webkit-autofill {-webkit-text-fill-color:var(--ink)!important;box-shadow:inset 0 0 0 1000px #171b24!important;caret-color:var(--ink);}

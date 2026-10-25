@@ -1,0 +1,7 @@
+[Unit]
+Description=Check RU mesh and Raspberry resource usage
+[Timer]
+OnBootSec=45s
+OnUnitInactiveSec=60s
+[Install]
+WantedBy=timers.target

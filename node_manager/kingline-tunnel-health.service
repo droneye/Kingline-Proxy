@@ -1,0 +1,18 @@
+[Unit]
+Description=Verify authenticated Kingline VPN tunnels
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/kingline-manager/app
+ExecStart=/opt/kingline-manager/venv/bin/python -m node_manager.tunnel_health
+TimeoutStartSec=180
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/kingline-control
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=256M

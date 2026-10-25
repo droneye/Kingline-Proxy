@@ -1,0 +1,18 @@
+[Unit]
+Description=Renew and deploy Kingline HTTPS identity
+After=network-online.target wg-quick@wg-control.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/kingline-manager/app
+ExecStart=/opt/kingline-manager/venv/bin/python -m node_manager.cover_maintenance
+TimeoutStartSec=20min
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/kingline-manager/data /opt/kingline-control
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=384M

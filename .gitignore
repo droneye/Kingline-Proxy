@@ -1,70 +1,46 @@
-####################################
-# Python
-####################################
+private/
 __pycache__/
-*.py[cod]
-*.pyo
-
-####################################
-# Virtual environments
-####################################
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+node_modules
+dist/
 .venv/
 venv/
-env/
-
-####################################
-# Environment variables / secrets
-####################################
 .env
 .env.*
-*.secret
-*.key
-*.pem
-*.crt
-*.pfx
-*.p12
-
-####################################
-# Databases (CRITICAL)
-####################################
+!.env.example
 *.db
+*.db-*
 *.sqlite
 *.sqlite3
-
-####################################
-# Logs & runtime data
-####################################
+*.sqlite3-*
 *.log
-logs/
-traffic_monitor.log
-traffic_data.json
-
-####################################
-# DNS / runtime state
-####################################
-dns/traffic_data.json
-dns/traffic_monitor.log
-
-####################################
-# XUI / VPN / infra secrets
-####################################
-*xui*
-*reality*
-*private*
-*cookie*
-*token*
-*uuid*
-
-####################################
-# OS / IDE
-####################################
-.DS_Store
-.idea/
-.vscode/
-
-####################################
-# Temp / drafts
-####################################
-draft.txt
-*.tmp
-*.bak
+*.log.*
+*.jsonl
+*.pem
+*.key
+*.token
+id_ed25519*
+known_hosts*
+backups/
+secrets/
+uploads/
+support_uploads/
+/backup-*.json
+/verification-*.json
+/*-status.json
+/tunnel-health.json
+/mobile-variant.json
+/danish-standard.json
+/owned-target-*.json
+/staging/verification-*.json
+/staging/deployment-manifest.json
+/staging/legacy-technical-*.json*
+/staging/DOMAIN-TRANSFER-STATUS.md
+/staging/*-REPORT.md
+/staging/*.png
+/staging/screenshots/
+/staging/bot/dns/traffic_data.json

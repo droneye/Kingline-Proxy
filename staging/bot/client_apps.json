@@ -1,0 +1,90 @@
+{
+  "devices": [
+    {
+      "id": "ios",
+      "label": "iPhone / iPad",
+      "apps": [
+        "v2raytun",
+        "happ"
+      ]
+    },
+    {
+      "id": "android",
+      "label": "Android",
+      "apps": [
+        "v2raytun",
+        "happ"
+      ]
+    },
+    {
+      "id": "windows",
+      "label": "Windows",
+      "apps": [
+        "happ",
+        "v2rayn"
+      ]
+    },
+    {
+      "id": "mac",
+      "label": "Mac",
+      "apps": [
+        "v2raytun",
+        "happ",
+        "v2rayn"
+      ]
+    },
+    {
+      "id": "tv",
+      "label": "Android TV",
+      "apps": [
+        "v2raytun",
+        "happ"
+      ]
+    }
+  ],
+  "apps": {
+    "v2raytun": {
+      "name": "v2RayTun",
+      "downloads": {
+        "ios": "https://apps.apple.com/app/id6476628951",
+        "android": "https://play.google.com/store/apps/details?id=com.v2raytun.android",
+        "mac": "https://apps.apple.com/app/id6476628951",
+        "tv": "https://v2raytun.com/"
+      },
+      "import": "Нажмите «+» → импорт из буфера обмена или по ссылке (URL)."
+    },
+    "happ": {
+      "name": "Happ",
+      "downloads": {
+        "ios": "https://www.happ.su/main/ru",
+        "android": "https://play.google.com/store/apps/details?id=com.happproxy",
+        "windows": "https://github.com/Happ-proxy/happ-desktop/releases",
+        "mac": "https://www.happ.su/main/ru",
+        "tv": "https://play.google.com/store/apps/details?id=com.happproxy"
+      },
+      "import": "Нажмите «+» и добавьте подписку из буфера обмена."
+    },
+    "streisand": {
+      "name": "Streisand",
+      "downloads": {
+        "ios": "https://apps.apple.com/app/streisand/id6450534064"
+      },
+      "import": "Нажмите «+» и выберите импорт из буфера обмена."
+    },
+    "v2rayng": {
+      "name": "v2rayNG",
+      "downloads": {
+        "android": "https://github.com/2dust/v2rayNG/releases"
+      },
+      "import": "Откройте меню ≡ → «Настройки подписки» → «+». Вставьте ссылку в URL, сохраните и обновите подписку."
+    },
+    "v2rayn": {
+      "name": "v2rayN",
+      "downloads": {
+        "windows": "https://github.com/2dust/v2rayN/releases",
+        "mac": "https://github.com/2dust/v2rayN/releases"
+      },
+      "import": "Откройте «Подписки» → настройки групп подписок → «Добавить». Вставьте ссылку в URL, сохраните и обновите подписку."
+    }
+  }
+}

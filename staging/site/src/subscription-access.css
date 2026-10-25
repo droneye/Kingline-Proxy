@@ -1,0 +1,20 @@
+.app-frame .access-expired-card{
+  border-color:rgba(255,92,116,.3)!important;
+  background:linear-gradient(145deg,rgba(139,31,52,.16),rgba(26,28,37,.94))!important;
+}
+.app-frame .access-expired-card .eyebrow{color:#ffadba;background:rgba(255,64,86,.1);border-color:rgba(255,64,86,.18)}
+.app-frame .access-expired-card .renew-access-button{
+  width:100%;min-height:54px;color:#fff!important;border:1px solid #ff7287!important;
+  background:linear-gradient(135deg,#f4435b,#d71f3c)!important;
+  box-shadow:0 8px 26px rgba(210,30,61,.18)!important;font-weight:700;
+}
+.app-frame .access-expired-card .renew-access-button:hover{background:linear-gradient(135deg,#ff536a,#e52b47)!important}
+.subscription-link-paused{display:flex;align-items:center;gap:13px;padding:15px;border:1px solid rgba(165,174,192,.13);border-radius:16px;background:rgba(140,150,170,.035);color:#8e95a4;min-width:0}
+.subscription-link-paused svg{flex:0 0 23px;width:23px;height:23px;opacity:.65}
+.subscription-link-paused strong,.subscription-link-paused small{display:block;overflow-wrap:anywhere}
+.subscription-link-paused strong{font-size:.85rem;font-weight:550;color:#aeb3bf}
+.subscription-link-paused small{font-size:.75rem;line-height:1.55;margin-top:4px}
+.admin-user-transport-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.admin-user-transport-options button{min-width:0;min-height:44px}
+.admin-user-transport>small{font-size:12px;color:#9ca8bd;line-height:1.65;max-width:70ch}
+

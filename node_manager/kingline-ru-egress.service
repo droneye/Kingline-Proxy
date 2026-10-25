@@ -1,0 +1,17 @@
+[Unit]
+Description=Kingline RU private mesh and Raspberry resources
+After=network-online.target kingline-node-manager.service
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/kingline-manager/app
+Environment=KINGLINE_DIAGNOSTICS_PATH=/opt/kingline-manager/data/diagnostics/ru-egress.jsonl
+Environment=KINGLINE_LOG_MAX_BYTES=262144
+Environment=KINGLINE_LOG_BACKUPS=2
+ExecStart=/opt/kingline-manager/venv/bin/python -m node_manager.ru_egress
+TimeoutStartSec=120
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/kingline-manager/data /opt/kingline-control
+MemoryMax=192M

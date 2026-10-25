@@ -1,0 +1,30 @@
+[Unit]
+Description=Kingline owner administration bridge (private Unix socket)
+After=kingline-node-manager.service docker.service
+Requires=kingline-node-manager.service
+[Service]
+WorkingDirectory=/opt/kingline-manager/app
+Environment=KINGLINE_MANAGER_ROOT=/opt/kingline-manager/data
+Environment=KINGLINE_DIAGNOSTICS_PATH=/opt/kingline-manager/data/diagnostics/site-admin.jsonl
+ExecStartPre=/usr/bin/rm -f /run/kingline-site-admin/bridge.sock
+ExecStart=/opt/kingline-manager/venv/bin/python -m node_manager.site_admin
+ExecStartPost=/opt/kingline-manager/venv/bin/python -c "import os,time; p='/run/kingline-site-admin/bridge.sock'; next((True for _ in range(100) if os.path.exists(p) or time.sleep(.1)),None); os.chmod(p,0o660)"
+Restart=on-failure
+RestartSec=5
+User=root
+Group=10001
+RuntimeDirectory=kingline-site-admin
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/kingline-manager/data /run/kingline-site-admin
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=256M
+TasksMax=64
+[Install]
+WantedBy=multi-user.target

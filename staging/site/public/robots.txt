@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /support
+Disallow: /api/
+Sitemap: https://kingline.online/sitemap.xml

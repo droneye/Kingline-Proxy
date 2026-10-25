@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodically verify Kingline VPN forwarding
+
+[Timer]
+OnBootSec=90s
+OnUnitInactiveSec=180s
+RandomizedDelaySec=15s
+AccuracySec=5s
+Unit=kingline-tunnel-health.service
+
+[Install]
+WantedBy=timers.target

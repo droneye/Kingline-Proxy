@@ -1,0 +1,29 @@
+[Unit]
+Description=Kingline owner node review bot bridge
+After=kingline-node-manager.service
+Requires=kingline-node-manager.service
+[Service]
+WorkingDirectory=/opt/kingline-manager/app
+Environment=KINGLINE_MANAGER_ROOT=/opt/kingline-manager/data
+ExecStartPre=/usr/bin/rm -f /run/kingline-node-review/bot.sock
+ExecStart=/opt/kingline-manager/venv/bin/python -m node_manager.review_bot_socket
+ExecStartPost=/opt/kingline-manager/venv/bin/python -c "import os,time; p='/run/kingline-node-review/bot.sock'; next((True for _ in range(100) if os.path.exists(p) or time.sleep(.1)),None); os.chmod(p,0o660)"
+Restart=on-failure
+RestartSec=5
+User=root
+Group=10001
+RuntimeDirectory=kingline-node-review
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/run/kingline-node-review
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=128M
+TasksMax=32
+[Install]
+WantedBy=multi-user.target

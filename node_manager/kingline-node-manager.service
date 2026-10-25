@@ -1,0 +1,29 @@
+[Unit]
+Description=Kingline private node onboarding API
+After=network-online.target docker.service wg-quick@wg-control.service
+Wants=network-online.target
+Requires=docker.service wg-quick@wg-control.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/kingline-manager/app
+Environment=KINGLINE_MANAGER_ROOT=/opt/kingline-manager/data
+Environment=KINGLINE_DIAGNOSTICS_PATH=/opt/kingline-manager/data/diagnostics/node-manager.jsonl
+ExecStart=/opt/kingline-manager/venv/bin/uvicorn node_manager.app:create_app --factory --host 127.0.0.1 --port 8090 --workers 1 --no-access-log --log-level warning
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/kingline-manager/data /opt/kingline-control /etc/wireguard /etc/kingline-firewall.nft
+CapabilityBoundingSet=CAP_NET_ADMIN
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+MemoryMax=384M
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target
