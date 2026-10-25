@@ -21,7 +21,26 @@ SUFFIXES = {'.py', '.js', '.jsx', '.mjs', '.ts', '.tsx', '.css', '.html',
             '.png', '.jpg', '.jpeg', '.webp', '.ico', '.woff', '.woff2',
             '.sh', '.command', '.service', '.timer', '.example'}
 ROOT_SUFFIXES = {'.py', '.sh', '.command', '.service', '.md'}
-PRIVATE_NAMES = {'traffic_data.json', 'DOMAIN-TRANSFER-STATUS.md'}
+PRIVATE_NAMES = {
+    'traffic_data.json', 'DOMAIN-TRANSFER-STATUS.md',
+    # Actual shared-host access policy belongs to private server operations.
+    'isolate_collaborator.py', 'verify_collaborator.py',
+    'deploy_collaborator_docs.sh',
+}
+PUBLIC_SHARED_HOST_NOTE = '''## Другие проекты на общем сервере
+
+Kingline следует отделять от других проектов правами файлов, отдельными
+учётными записями и независимым Docker без системных привилегий. Доступ к
+пользовательским данным, ключам, внутренним API и управлению VPN должен
+оставаться закрытым. Права системного Docker дают контроль над хостом и
+не подходят для такого разделения.
+
+Ресурсные ограничения других проектов задаются с учётом потребностей VPN.
+Проверять нужно как обычный доступ, так и доступ из контейнеров и через SSH.
+Действующие учётные записи, ключи, пределы, сетевые правила и порядок отзыва
+доступа описываются только в закрытой эксплуатационной документации.
+
+'''
 SENSITIVE = {
     'bot_token': re.compile(r'\b\d{7,12}:[A-Za-z0-9_-]{30,50}\b'),
     'github_token': re.compile(r'\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})\b'),
@@ -59,6 +78,10 @@ def prepare(root, output, redactions):
         content=path.read_bytes()
         if b'\0' not in content and path.suffix not in {'.png','.jpg','.jpeg','.webp','.ico','.woff','.woff2'}:
             text=content.decode('utf-8')
+            if str(relative) == 'staging/docs/service.md':
+                # Never publish the server's concrete collaborator access policy.
+                text=re.sub(r'(?ms)^## Совместный сервер и проект Lexicon\n.*?(?=^## Личный кабинет и инструкции\n)',
+                            PUBLIC_SHARED_HOST_NOTE,text)
             for old,new in sorted(redactions.items(),key=lambda item:len(item[0]),reverse=True):
                 text=text.replace(old,new)
             # A public checkout never grants access to the deployment owner's ID.
